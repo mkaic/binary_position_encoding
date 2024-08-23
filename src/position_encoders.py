@@ -28,7 +28,7 @@ def get_binary_position_encoding(shape, device):
     return positions
 
 
-def get_sinusoidal_position_vectors(shape, num_frequencies, device):
+def get_sinusoidal_position_encoding(shape, num_frequencies, device):
 
     positions = torch.stack(
         torch.meshgrid(
@@ -42,6 +42,7 @@ def get_sinusoidal_position_vectors(shape, num_frequencies, device):
 
     for freq_idx in range(1, num_frequencies + 1):
         for pe_axis in range(len(shape)):
+
             pos = positions[..., pe_axis] * (
                 1 / (10000 ** (freq_idx / num_frequencies))
             )
@@ -57,7 +58,7 @@ def get_sinusoidal_position_vectors(shape, num_frequencies, device):
     return positions
 
 
-def dumb_coordinate_position_encoding(shape, device):
+def get_dumb_coordinate_position_encoding(shape, device):
     positions = torch.stack(
         torch.meshgrid(
             *[
@@ -67,5 +68,36 @@ def dumb_coordinate_position_encoding(shape, device):
         ),
         dim=-1,
     )
+
+    return positions
+
+
+def get_binary_sinusoidal_position_encoding(shape, device):
+
+    longest_side = max(shape)
+    num_frequencies = math.ceil(math.log2(longest_side))
+
+    positions = torch.stack(
+        torch.meshgrid(
+            *[torch.arange(i, dtype=torch.bfloat16, device=device) for i in shape],
+            indexing="ij"
+        ),
+        dim=-1,
+    )
+
+    freq_bands = []
+
+    for freq_idx in range(1, num_frequencies + 1):
+        for pe_axis in range(len(shape)):
+
+            pos = positions[..., pe_axis] / (2**freq_idx)
+
+            cos = torch.cos(pos)
+            sin = torch.sin(pos)
+
+            freq_bands.append(cos)
+            freq_bands.append(sin)
+
+    positions = torch.stack(freq_bands, dim=-1)  # H, W, C
 
     return positions

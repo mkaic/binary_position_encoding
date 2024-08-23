@@ -3,11 +3,12 @@ from pathlib import Path
 
 import torch
 from PIL import Image
-from pytorch_msssim import ms_ssim
 from torchvision.io import write_jpeg
 from torchvision.transforms.functional import to_tensor
 from tqdm import tqdm
-from .reconstructor import Reconstructor
+from .reconstructor import *
+import kornia.color as kc
+import torch.nn as nn
 
 parser = ArgumentParser()
 parser.add_argument("-g", "--gpu", type=int, default=0)
@@ -15,10 +16,10 @@ gpu = parser.parse_args().gpu
 device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
 dtype = torch.bfloat16
 
-hidden_dim = 22
-num_layers = 8
-pe_type = "binary"
-activation_type = "gelu"
+hidden_dim = 24
+num_layers = 4
+pe_type = "binary_sinusoidal"
+activation_class = nn.GELU
 
 
 iterations = 2000
@@ -30,18 +31,22 @@ images_path.mkdir(exist_ok=True, parents=True)
 weights_path = Path("recon/weights")
 weights_path.mkdir(exist_ok=True, parents=True)
 
-# image = Image.open("jwst_cliffs.png").convert("RGB")
-# image = Image.open("branos.jpg").convert("RGB")
-image = Image.open("/workspace/projects/noah+brytan.png").convert("RGB")
+image_rgb = Image.open("jwst_cliffs.png").convert("RGB")
+# image_rgb = Image.open("branos.jpg").convert("RGB")
+# image_rgb = Image.open("monalisa.jpg").convert("RGB")
+# image_rgb = Image.open("minion.jpg").convert("RGB")
+# image_rgb = Image.open("/workspace/projects/noah+brytan.png").convert("RGB")
 
-image = to_tensor(image).to(device)
+image_rgb = to_tensor(image_rgb).to(device)
+image_ycbcr = kc.rgb_to_ycbcr(image_rgb)
+
 write_jpeg(
-    (image * 255).to("cpu", torch.uint8),
+    (image_rgb * 255).to("cpu", torch.uint8),
     "recon/original.jpg",
     quality=100,
 )
 
-c, h, w = image.shape
+c, h, w = image_rgb.shape
 
 reconstructor = (
     Reconstructor(
@@ -49,7 +54,7 @@ reconstructor = (
         hidden_dim=hidden_dim,
         num_layers=num_layers,
         pe_type=pe_type,
-        activation_type=activation_type,
+        activation_class=activation_class,
         device=device,
     )
     .to(device)
@@ -70,31 +75,33 @@ pbar = tqdm(range(iterations + 1))
 
 for i in pbar:
     optimizer.zero_grad()
-    output = reconstructor()
-    error = output - image
-    # ms_ssim_loss = -1 * ms_ssim(
-    #     output.unsqueeze(0), image.unsqueeze(0), data_range=1, size_average=True
-    # )
-    mse = torch.mean(torch.square(error))
-    mae = torch.mean(torch.abs(error))
-    loss = mse  # + mae # + ms_ssim_loss
-    loss.backward()
+    output_ycbcr = reconstructor()
+    output_rgb = kc.ycbcr_to_rgb(output_ycbcr)
+
+    error_ycbcr = output_ycbcr - image_ycbcr
+
+    mse_ycbcr = torch.mean(torch.square(error_ycbcr))
+    mae_ycbcr = torch.mean(torch.abs(error_ycbcr))
+    mse_rgb = torch.mean(torch.square(output_rgb - image_rgb))
+    mae_rgb = torch.mean(torch.abs(output_rgb - image_rgb))
+
+    mse_ycbcr.backward()
     optimizer.step()
 
     pbar.set_description(
-        f"RMSE: {torch.sqrt(mse).item():.4f} | MAE: {mae.item():.4f}"  # | MS-SSIM: {ms_ssim_loss.item():.4f}"
+        f"RMSE: {torch.sqrt(mse_rgb).item():.4f} | MAE: {mae_rgb.item():.4f}"  # | MS-SSIM: {ms_ssim_loss.item():.4f}"
     )
 
     if i % 10 == 0:
-        output = output * 255
-        output = output.to("cpu", torch.uint8)
+        output_rgb = output_rgb * 255
+        output_rgb = output_rgb.to("cpu", torch.uint8)
         write_jpeg(
-            output,
+            output_rgb,
             f"recon/images/{i:04d}.jpg",
             quality=100,
         )
         write_jpeg(
-            output,
+            output_rgb,
             f"recon/latest.jpg",
             quality=100,
         )

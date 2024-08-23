@@ -5,7 +5,9 @@ from .position_encoders import *
 
 
 class Reconstructor(nn.Module):
-    def __init__(self, shape, hidden_dim, num_layers, pe_type, activation_type, device):
+    def __init__(
+        self, shape, hidden_dim, num_layers, pe_type, activation_class, device
+    ):
         super().__init__()
 
         self.shape = shape
@@ -20,49 +22,35 @@ class Reconstructor(nn.Module):
                     device=device,
                 )
             case "sinusoidal":
-                self.pos_enc = get_sinusoidal_position_vectors(
+                self.pos_enc = get_sinusoidal_position_encoding(
                     shape=shape,
                     num_frequencies=hidden_dim // 4,
                     device=device,
                 )
             case "dumb":
-                self.pos_enc = dumb_coordinate_position_encoding(
+                self.pos_enc = get_dumb_coordinate_position_encoding(
+                    shape=shape,
+                    device=device,
+                )
+            case "binary_sinusoidal":
+                self.pos_enc = get_binary_sinusoidal_position_encoding(
                     shape=shape,
                     device=device,
                 )
 
         self.pe_dim = self.pos_enc.shape[-1]
 
-        self.activation_type = activation_type
-        match self.activation_type:
-            case "gelu":
-                self.ActivationClass = nn.GELU
-            case "abs":
-                self.ActivationClass = Abs
+        self.activation_class = activation_class
 
         self.hidden_dim = hidden_dim
 
-        layer_sizes = [self.pe_dim] + [self.hidden_dim] * (num_layers - 1) + [3]
-        print(layer_sizes)
+        layer_sizes = [self.pe_dim] + [self.hidden_dim * 2] * (num_layers - 1) + [3]
 
-        self.layers = nn.ModuleList()
-        self.activations = nn.ModuleList()
-        for i, (dim_in, dim_out) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
-            self.layers.append(nn.Linear(dim_in, dim_out))
-            if not i == len(layer_sizes) - 2:
-                self.activations.append(self.ActivationClass())
-            else:
-                self.activations.append(nn.Identity())
+        self.mlp = MultPosMLP(layer_sizes, self.activation_class)
 
     def evaluate(self, pos_enc) -> torch.Tensor:
 
-        x = pos_enc
-
-        for i, (layer, activation) in enumerate(zip(self.layers, self.activations)):
-            x = layer(x)
-            x = activation(x)
-            if i < len(self.layers) - 3:
-                x[..., : self.pe_dim] = x[..., : self.pe_dim] * pos_enc
+        x = self.mlp(pos_enc)
 
         x = torch.sigmoid(x)
 
@@ -106,3 +94,30 @@ class SirenLinear(nn.Module):
 class Abs(nn.Module):
     def forward(self, x):
         return torch.abs(x)
+
+
+class MultPosMLP(nn.Module):
+    def __init__(self, layer_sizes, activation_class):
+        super().__init__()
+        self.layers = nn.ModuleList()
+        self.activations = nn.ModuleList()
+        for i, (dim_in, dim_out) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
+            self.layers.append(nn.Linear(dim_in, dim_out))
+            if not i == len(layer_sizes) - 2:
+                self.activations.append(activation_class())
+            else:
+                self.activations.append(nn.Identity())
+
+    def forward(self, x):
+        x_original = x
+        chunk_size = x_original.shape[-1]
+
+        for i, (layer, activation) in enumerate(zip(self.layers, self.activations)):
+            x = layer(x)
+            x = activation(x)
+            if i < len(self.layers) - 2:
+                x[..., :chunk_size] = x[..., :chunk_size] * x_original
+
+            # x = x + torch.randn_like(x) * 0.1
+
+        return x
