@@ -19,7 +19,7 @@ def get_binary_position_encoding(shape, device):
     mask = 2 ** torch.arange(
         num_frequencies - 1, -1, -1, dtype=torch.int, device=device
     )
-    positions = positions.unsqueeze(-1).bitwise_and(mask).ne(0).to(dtype=torch.float32)
+    positions = positions.unsqueeze(-1).bitwise_and(mask).ne(0).to(dtype=torch.bfloat16)
 
     positions = positions * 2 - 1
 
@@ -32,7 +32,7 @@ def get_sinusoidal_position_vectors(shape, num_frequencies, device):
 
     positions = torch.stack(
         torch.meshgrid(
-            *[torch.arange(i, dtype=torch.float32, device=device) for i in shape],
+            *[torch.arange(i, dtype=torch.bfloat16, device=device) for i in shape],
             indexing="ij"
         ),
         dim=-1,
@@ -61,7 +61,7 @@ def dumb_coordinate_position_encoding(shape, device):
     positions = torch.stack(
         torch.meshgrid(
             *[
-                torch.arange(i, dtype=torch.float32, device=device) for i in shape
+                torch.arange(i, dtype=torch.bfloat16, device=device) for i in shape
             ],  # [0, 1]
             indexing="ij"
         ),

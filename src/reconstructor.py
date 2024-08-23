@@ -8,6 +8,10 @@ class Reconstructor(nn.Module):
     def __init__(self, shape, hidden_dim, num_layers, pe_type, activation_type, device):
         super().__init__()
 
+        self.shape = shape
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+
         self.pe_type = pe_type
         match self.pe_type:
             case "binary":
@@ -27,40 +31,40 @@ class Reconstructor(nn.Module):
                     device=device,
                 )
 
+        self.pe_dim = self.pos_enc.shape[-1]
+
         self.activation_type = activation_type
         match self.activation_type:
             case "gelu":
                 self.ActivationClass = nn.GELU
-                self.LinearClass = nn.Linear
-            case "sinusoidal":
-                self.ActivationClass = SinActivation
-                self.LinearClass = SirenLinear
+            case "abs":
+                self.ActivationClass = Abs
 
-        pe_dim = self.pos_enc.shape[-1]
+        self.hidden_dim = hidden_dim
 
-        self.in_layer = self.LinearClass(pe_dim, hidden_dim, first=True)
-        self.in_activation = self.ActivationClass()
+        layer_sizes = [self.pe_dim] + [self.hidden_dim] * (num_layers - 1) + [3]
+        print(layer_sizes)
 
         self.layers = nn.ModuleList()
-        for _ in range(num_layers - 1):
-            self.layers.append(self.LinearClass(hidden_dim, hidden_dim))
-            self.layers.append(self.ActivationClass())
-
-        self.out_layer = nn.Linear(hidden_dim, 3)
+        self.activations = nn.ModuleList()
+        for i, (dim_in, dim_out) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
+            self.layers.append(nn.Linear(dim_in, dim_out))
+            if not i == len(layer_sizes) - 2:
+                self.activations.append(self.ActivationClass())
+            else:
+                self.activations.append(nn.Identity())
 
     def evaluate(self, pos_enc) -> torch.Tensor:
 
-        x = self.in_layer(pos_enc)
+        x = pos_enc
 
-        for layer in self.layers:
+        for i, (layer, activation) in enumerate(zip(self.layers, self.activations)):
             x = layer(x)
+            x = activation(x)
+            if i < len(self.layers) - 3:
+                x[..., : self.pe_dim] = x[..., : self.pe_dim] * pos_enc
 
-        x = self.out_layer(x)
-
-        if self.activation_type == "sinusoidal":
-            x = (x + 1) / 2
-        else:
-            x = torch.sigmoid(x)
+        x = torch.sigmoid(x)
 
         return x.permute(2, 0, 1)
 
@@ -97,3 +101,8 @@ class SirenLinear(nn.Module):
 
     def forward(self, x):
         return F.linear(x, self.weight, self.bias)
+
+
+class Abs(nn.Module):
+    def forward(self, x):
+        return torch.abs(x)

@@ -13,15 +13,16 @@ parser = ArgumentParser()
 parser.add_argument("-g", "--gpu", type=int, default=0)
 gpu = parser.parse_args().gpu
 device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
+dtype = torch.bfloat16
 
-hidden_dim = 64
+hidden_dim = 22
 num_layers = 8
-pe_type = "dumb"
-activation_type = "sinusoidal"
+pe_type = "binary"
+activation_type = "gelu"
 
 
 iterations = 2000
-lr = 0.0001
+lr = 0.01
 save = False
 
 images_path = Path("recon/images")
@@ -29,24 +30,31 @@ images_path.mkdir(exist_ok=True, parents=True)
 weights_path = Path("recon/weights")
 weights_path.mkdir(exist_ok=True, parents=True)
 
-image = Image.open("jwst_cliffs.png").convert("RGB")
+# image = Image.open("jwst_cliffs.png").convert("RGB")
+# image = Image.open("branos.jpg").convert("RGB")
+image = Image.open("/workspace/projects/noah+brytan.png").convert("RGB")
+
 image = to_tensor(image).to(device)
 write_jpeg(
     (image * 255).to("cpu", torch.uint8),
-    "recon/images/original.jpg",
+    "recon/original.jpg",
     quality=100,
 )
 
 c, h, w = image.shape
 
-reconstructor = Reconstructor(
-    shape=(h, w),
-    hidden_dim=hidden_dim,
-    num_layers=num_layers,
-    pe_type=pe_type,
-    activation_type=activation_type,
-    device=device,
-).to(device)
+reconstructor = (
+    Reconstructor(
+        shape=(h, w),
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
+        pe_type=pe_type,
+        activation_type=activation_type,
+        device=device,
+    )
+    .to(device)
+    .to(dtype)
+)
 
 optimizer = torch.optim.AdamW(
     reconstructor.parameters(),
@@ -56,7 +64,7 @@ optimizer = torch.optim.AdamW(
 num_params = sum([p.numel() for p in reconstructor.parameters()])
 
 print(f"{num_params:,} trainable parameters")
-print(f"{num_params * 4 / 1024:.2f} kB")
+print(f"{num_params * 4 / 1024 / 2:.2f} kB")
 
 pbar = tqdm(range(iterations + 1))
 
@@ -64,17 +72,17 @@ for i in pbar:
     optimizer.zero_grad()
     output = reconstructor()
     error = output - image
-    ms_ssim_loss = -1 * ms_ssim(
-        output.unsqueeze(0), image.unsqueeze(0), data_range=1, size_average=True
-    )
+    # ms_ssim_loss = -1 * ms_ssim(
+    #     output.unsqueeze(0), image.unsqueeze(0), data_range=1, size_average=True
+    # )
     mse = torch.mean(torch.square(error))
     mae = torch.mean(torch.abs(error))
-    loss = mse + mae + ms_ssim_loss
+    loss = mse  # + mae # + ms_ssim_loss
     loss.backward()
     optimizer.step()
 
     pbar.set_description(
-        f"RMSE: {torch.sqrt(mse).item():.4f} | MAE: {mae.item():.4f} | MS-SSIM: {ms_ssim_loss.item():.4f}"
+        f"RMSE: {torch.sqrt(mse).item():.4f} | MAE: {mae.item():.4f}"  # | MS-SSIM: {ms_ssim_loss.item():.4f}"
     )
 
     if i % 10 == 0:
@@ -87,7 +95,7 @@ for i in pbar:
         )
         write_jpeg(
             output,
-            f"recon/images/latest.jpg",
+            f"recon/latest.jpg",
             quality=100,
         )
 
