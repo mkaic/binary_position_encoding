@@ -16,8 +16,8 @@ gpu = parser.parse_args().gpu
 device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
 dtype = torch.bfloat16
 
-hidden_dim = 24
-num_layers = 4
+hidden_dim =20
+num_layers = 2
 pe_type = "binary_sinusoidal"
 activation_class = nn.GELU
 
@@ -31,11 +31,11 @@ images_path.mkdir(exist_ok=True, parents=True)
 weights_path = Path("recon/weights")
 weights_path.mkdir(exist_ok=True, parents=True)
 
-image_rgb = Image.open("jwst_cliffs.png").convert("RGB")
+# image_rgb = Image.open("jwst_cliffs.png").convert("RGB")
 # image_rgb = Image.open("branos.jpg").convert("RGB")
 # image_rgb = Image.open("monalisa.jpg").convert("RGB")
 # image_rgb = Image.open("minion.jpg").convert("RGB")
-# image_rgb = Image.open("/workspace/projects/noah+brytan.png").convert("RGB")
+image_rgb = Image.open("/workspace/projects/ok.jpg").convert("RGB")
 
 image_rgb = to_tensor(image_rgb).to(device)
 image_ycbcr = kc.rgb_to_ycbcr(image_rgb)

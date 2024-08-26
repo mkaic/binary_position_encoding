@@ -44,7 +44,7 @@ class Reconstructor(nn.Module):
 
         self.hidden_dim = hidden_dim
 
-        layer_sizes = [self.pe_dim] + [self.hidden_dim * 2] * (num_layers - 1) + [3]
+        layer_sizes = [self.pe_dim] + [self.hidden_dim] * (num_layers - 1) + [3]
 
         self.mlp = MultPosMLP(layer_sizes, self.activation_class)
 
