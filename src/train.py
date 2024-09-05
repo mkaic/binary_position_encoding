@@ -16,8 +16,8 @@ gpu = parser.parse_args().gpu
 device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
 dtype = torch.bfloat16
 
-hidden_dim =20
-num_layers = 2
+hidden_dim = 64
+num_layers = 4
 pe_type = "binary_sinusoidal"
 activation_class = nn.GELU
 
@@ -31,14 +31,13 @@ images_path.mkdir(exist_ok=True, parents=True)
 weights_path = Path("recon/weights")
 weights_path.mkdir(exist_ok=True, parents=True)
 
-# image_rgb = Image.open("jwst_cliffs.png").convert("RGB")
+image_rgb = Image.open("jwst_cliffs.png").convert("RGB")
 # image_rgb = Image.open("branos.jpg").convert("RGB")
 # image_rgb = Image.open("monalisa.jpg").convert("RGB")
 # image_rgb = Image.open("minion.jpg").convert("RGB")
-image_rgb = Image.open("/workspace/projects/ok.jpg").convert("RGB")
+# image_rgb = Image.open("/workspace/projects/ok.jpg").convert("RGB")
 
 image_rgb = to_tensor(image_rgb).to(device)
-image_ycbcr = kc.rgb_to_ycbcr(image_rgb)
 
 write_jpeg(
     (image_rgb * 255).to("cpu", torch.uint8),
@@ -75,17 +74,14 @@ pbar = tqdm(range(iterations + 1))
 
 for i in pbar:
     optimizer.zero_grad()
-    output_ycbcr = reconstructor()
-    output_rgb = kc.ycbcr_to_rgb(output_ycbcr)
+    output_rgb = reconstructor()
 
-    error_ycbcr = output_ycbcr - image_ycbcr
+    error_rgb = output_rgb - image_rgb
 
-    mse_ycbcr = torch.mean(torch.square(error_ycbcr))
-    mae_ycbcr = torch.mean(torch.abs(error_ycbcr))
     mse_rgb = torch.mean(torch.square(output_rgb - image_rgb))
     mae_rgb = torch.mean(torch.abs(output_rgb - image_rgb))
 
-    mse_ycbcr.backward()
+    mse_rgb.backward()
     optimizer.step()
 
     pbar.set_description(

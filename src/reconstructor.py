@@ -60,42 +60,6 @@ class Reconstructor(nn.Module):
         return self.evaluate(self.pos_enc)
 
 
-class SinActivation(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return torch.sin(30 * x)
-
-
-class SirenLinear(nn.Module):
-    def __init__(self, in_features, out_features, first=False, last=False):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.first = first
-        self.last = last
-        self.weight = nn.Parameter(torch.empty((out_features, in_features)))
-        self.bias = nn.Parameter(torch.empty((out_features)))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        if self.first:
-            bound = 1 / self.in_features
-        else:
-            bound = math.sqrt((6 / self.in_features))
-        nn.init.uniform_(self.weight, -bound, bound)
-        nn.init.zeros_(self.bias)
-
-    def forward(self, x):
-        return F.linear(x, self.weight, self.bias)
-
-
-class Abs(nn.Module):
-    def forward(self, x):
-        return torch.abs(x)
-
-
 class MultPosMLP(nn.Module):
     def __init__(self, layer_sizes, activation_class):
         super().__init__()
