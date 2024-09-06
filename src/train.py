@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 from PIL import Image
-from torchvision.io import write_jpeg
+from torchvision.io import write_jpeg, write_png
 from torchvision.transforms.functional import to_tensor
 from tqdm import tqdm
 from .reconstructor import *
@@ -16,9 +16,9 @@ gpu = parser.parse_args().gpu
 device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
 dtype = torch.bfloat16
 
-hidden_dim = 64
-num_layers = 4
-pe_type = "binary_sinusoidal"
+hidden_dim = 128
+num_layers = 16
+pe_type = "sinusoidal"
 activation_class = nn.GELU
 
 
@@ -39,10 +39,9 @@ image_rgb = Image.open("jwst_cliffs.png").convert("RGB")
 
 image_rgb = to_tensor(image_rgb).to(device)
 
-write_jpeg(
+write_png(
     (image_rgb * 255).to("cpu", torch.uint8),
-    "recon/original.jpg",
-    quality=100,
+    "recon/original.png",
 )
 
 c, h, w = image_rgb.shape
@@ -59,6 +58,8 @@ reconstructor = (
     .to(device)
     .to(dtype)
 )
+
+reconstructor = torch.compile(reconstructor)
 
 optimizer = torch.optim.AdamW(
     reconstructor.parameters(),

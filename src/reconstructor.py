@@ -27,11 +27,6 @@ class Reconstructor(nn.Module):
                     num_frequencies=hidden_dim // 4,
                     device=device,
                 )
-            case "dumb":
-                self.pos_enc = get_dumb_coordinate_position_encoding(
-                    shape=shape,
-                    device=device,
-                )
             case "binary_sinusoidal":
                 self.pos_enc = get_binary_sinusoidal_position_encoding(
                     shape=shape,
@@ -74,13 +69,13 @@ class MultPosMLP(nn.Module):
 
     def forward(self, x):
         x_original = x
-        chunk_size = x_original.shape[-1]
+        input_hidden_dim = x_original.shape[-1]
 
         for i, (layer, activation) in enumerate(zip(self.layers, self.activations)):
             x = layer(x)
             x = activation(x)
-            if i < len(self.layers) - 2:
-                x[..., :chunk_size] = x[..., :chunk_size] * x_original
+            if i < len(self.layers) - 1:
+                x[..., :input_hidden_dim] = x[..., :input_hidden_dim] * x_original
 
             # x = x + torch.randn_like(x) * 0.1
 
